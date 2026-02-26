@@ -1,0 +1,12 @@
+--- a/src/modules.mjs
++++ b/src/modules.mjs
+
+ In calculateLibraries(), add after the libsyscall.js entry:
+
+   if (!WASMFS) {
+     libraries.push('libsyscall.js');
+   }
++
++  if (DIRECT_SOCKETS) {
++    libraries.push('libdirectsockets.js');
++  }

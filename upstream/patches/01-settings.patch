@@ -1,0 +1,10 @@
+--- a/src/settings.js
++++ b/src/settings.js
+
+ Add after the PROXY_POSIX_SOCKETS declaration:
+
++// Use Chrome's Direct Sockets API (TCPSocket, TCPServerSocket, UDPSocket)
++// for real TCP/UDP networking in Isolated Web Apps, replacing the
++// WebSocket-to-POSIX-socket proxy. Requires -sJSPI for async bridging.
++// [link to upstream docs]
++var DIRECT_SOCKETS = false;

@@ -1,0 +1,14 @@
+{
+  "name": "quic-stress-profiler",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "profile": "node chrome_profiler.mjs",
+    "profile:long": "PROFILE_DURATION=120 node chrome_profiler.mjs",
+    "flamegraph": "node generate_flamegraph.mjs",
+    "compare": "node compare_results.mjs"
+  },
+  "dependencies": {
+    "puppeteer": "^23.0.0"
+  }
+}

@@ -1,0 +1,7 @@
+--- a/src/lib/libsyscall.js
++++ b/src/lib/libsyscall.js
+
+ Change the socket syscall guard to exclude when DIRECT_SOCKETS is active:
+
+-#if PROXY_POSIX_SOCKETS == 0 && WASMFS == 0
++#if PROXY_POSIX_SOCKETS == 0 && WASMFS == 0 && DIRECT_SOCKETS == 0

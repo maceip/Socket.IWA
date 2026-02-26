@@ -1,0 +1,11 @@
+--- a/system/lib/libc/emscripten_syscall_stubs.c
++++ b/system/lib/libc/emscripten_syscall_stubs.c
+
+ Remove the weak __syscall_setsockopt stub (conflicts with JS implementation
+ from libdirectsockets.js when DIRECT_SOCKETS is enabled):
+
+-weak int __syscall_setsockopt(int sockfd, int level, int optname, intptr_t optval, size_t optlen, int dummy) {
+-  REPORT(setsockopt);
+-  return -ENOPROTOOPT; // The option is unknown at the level indicated.
+-}
++// __syscall_setsockopt: provided by libdirectsockets.js when DIRECT_SOCKETS is enabled

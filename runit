@@ -1,0 +1,122 @@
+#!/bin/bash
+# runit — Build QUIC echo server and package signed IWA (.swbn).
+#
+# Usage: ./runit
+#
+set -e
+cd "$(dirname "$0")"
+ROOT="$(pwd)"
+IWA="$ROOT/iwa-sink/iwa-sink"
+
+echo "============================================"
+echo "  QUIC Echo Server — Build & Package"
+echo "============================================"
+echo ""
+
+# -----------------------------------------------
+# Step 1: Docker build (libraries + cert + server)
+# -----------------------------------------------
+echo "[1/3] Building in Docker (emscripten/emsdk:5.0.1)..."
+echo ""
+
+docker run --rm \
+  -v "$ROOT:/src" \
+  -v "$ROOT/build:/build" \
+  emscripten/emsdk:5.0.1 \
+  bash /src/docker_build_quic.sh 2>&1 | while IFS= read -r line; do
+    case "$line" in
+      *"=== "*|*"built and installed"*|*"Build complete"*|*"SHA-256"*|*"Generated cert"*|*"error:"*|*"FATAL"*|*"-rw"*|*"-rwx"*)
+        echo "  $line"
+        ;;
+    esac
+  done
+
+echo ""
+
+# -----------------------------------------------
+# Step 2: Inject artifacts into iwa-sink
+# -----------------------------------------------
+echo "[2/3] Injecting build artifacts..."
+
+# Copy wasm artifacts to iwa-sink public/
+cp "$ROOT/build/quic_echo_server.js"   "$IWA/public/"
+cp "$ROOT/build/quic_echo_server.wasm" "$IWA/public/"
+
+# Extract and inject cert hash into quic.html
+CERT_HASH_B64=$(grep 'Certificate SHA-256 (base64)' "$ROOT/cert_data.h" | sed 's/.*: //' | sed 's/ .*//')
+CERT_HASH_HEX=$(grep 'Certificate SHA-256 (hex)' "$ROOT/cert_data.h" | sed 's/.*: //' | sed 's/ .*//')
+
+sed -i "s|name=\"cert-hash-b64\" content=\"[^\"]*\"|name=\"cert-hash-b64\" content=\"${CERT_HASH_B64}\"|" \
+  "$IWA/quic.html"
+
+# Also update Socket.IWA if it exists
+if [ -d "$ROOT/Socket.IWA/public" ]; then
+  cp "$ROOT/build/quic_echo_server.js"   "$ROOT/Socket.IWA/public/"
+  cp "$ROOT/build/quic_echo_server.wasm" "$ROOT/Socket.IWA/public/"
+  sed -i "s|name=\"cert-hash-b64\" content=\"[^\"]*\"|name=\"cert-hash-b64\" content=\"${CERT_HASH_B64}\"|" \
+    "$ROOT/Socket.IWA/public/index.html"
+fi
+
+# Copy app icon if user has ~/socket.iwa.png
+if [ -f "$HOME/socket.iwa.png" ]; then
+  cp "$HOME/socket.iwa.png" "$IWA/public/images/socket-iwa.png"
+  echo "  Copied socket.iwa.png as app icon"
+fi
+
+echo "  Artifacts copied to iwa-sink/public/"
+echo "  Cert hash injected: $CERT_HASH_B64"
+echo ""
+
+# -----------------------------------------------
+# Step 3: Build signed web bundle
+# -----------------------------------------------
+echo "[3/3] Building signed web bundle (.swbn)..."
+
+cd "$IWA"
+
+# Install deps if needed
+if [ ! -d "node_modules" ]; then
+  npm install --silent 2>&1
+fi
+
+# Build with passphrase from .env
+KEY_PASSPHRASE="iwa-sink" NODE_ENV=production npx vite build 2>&1 | while IFS= read -r line; do
+  case "$line" in
+    *"built in"*|*"swbn"*|*aaaic*)
+      echo "  $line"
+      ;;
+  esac
+done
+
+cd "$ROOT"
+
+echo ""
+echo "============================================"
+echo "  Signed Web Bundle"
+echo "============================================"
+echo ""
+ls -lh "$IWA/dist/iwa-sink.swbn" | awk '{printf "  %-8s %s\n", $5, $NF}'
+echo ""
+echo "============================================"
+echo "  Certificate (14-day, ECDSA P-256)"
+echo "============================================"
+echo ""
+echo "  SHA-256 hex:    $CERT_HASH_HEX"
+echo "  SHA-256 base64: $CERT_HASH_B64"
+echo ""
+echo "============================================"
+echo "  WebTransport Client Snippet"
+echo "============================================"
+echo ""
+echo "  const wt = new WebTransport('<QUIC_ENDPOINT>', {"
+echo "    serverCertificateHashes: [{"
+echo "      algorithm: 'sha-256',"
+echo "      value: Uint8Array.from(atob('${CERT_HASH_B64}'),"
+echo "             c => c.charCodeAt(0)).buffer"
+echo "    }]"
+echo "  });"
+echo "  await wt.ready;"
+echo ""
+echo "============================================"
+echo "  Done! iwa-sink.swbn is ready to install."
+echo "============================================"

@@ -1,0 +1,20 @@
+--- a/src/lib/libwasi.js
++++ b/src/lib/libwasi.js
+
+ In fd_close, add a DIRECT_SOCKETS branch after the PROXY_POSIX_SOCKETS branch:
+
+ #elif PROXY_POSIX_SOCKETS
+     // close() is a tricky function because it can be used to close both regular file descriptors
+     // and POSIX network socket handles, hence an implementation would need to track for each
+     // file descriptor which kind of item it is. To simplify, when using PROXY_POSIX_SOCKETS
+     // option, use shutdown() to close a socket, and this function should behave like a no-op.
+     warnOnce('To close sockets with PROXY_POSIX_SOCKETS bridge, prefer to use the function shutdown() that is proxied, instead of close()')
+     return 0;
++#elif DIRECT_SOCKETS
++    var sock = DIRECT_SOCKETS.getSocket(fd);
++    if (sock) {
++      DIRECT_SOCKETS._closeSocket(sock);
++      delete DIRECT_SOCKETS.sockets[fd];
++      return 0;
++    }
++    return 0;

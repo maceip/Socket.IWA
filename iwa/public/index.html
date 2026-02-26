@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="cert-hash-b64" content="Izc1NE1Cya/xpKcCwGSFjwWCO6yzg5JIEQqSn7Q/EaQ=">
+  <title>QUIC Echo Server (Direct Sockets)</title>
+  <style>
+    body { font-family: monospace; background: #1a1a2e; color: #e0e0e0; padding: 20px; }
+    h1 { color: #0ff; }
+    #log { background: #16213e; border: 1px solid #0f3460; padding: 12px;
+           max-height: 70vh; overflow-y: auto; white-space: pre-wrap; font-size: 13px; }
+    .info { color: #7ec8e3; }
+    .ok { color: #0f0; }
+    .err { color: #f33; }
+    .warn { color: #ff0; }
+    button { background: #0f3460; color: #0ff; border: 1px solid #0ff;
+             padding: 8px 16px; cursor: pointer; font-family: monospace; margin: 4px; }
+    button:hover { background: #1a4a7a; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #cert-hash { background: #0a0a1a; padding: 8px; margin: 8px 0; border: 1px solid #333;
+                 word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>QUIC Echo Server</h1>
+  <div>
+    <button id="btn-start" onclick="startServer()">Start Server</button>
+    <button id="btn-stop" onclick="stopServer()" disabled>Stop</button>
+    <button id="btn-clear" onclick="clearLog()">Clear Log</button>
+  </div>
+  <div id="cert-hash"></div>
+  <div id="log"></div>
+
+  <script>
+    const logEl = document.getElementById('log');
+    const certHashEl = document.getElementById('cert-hash');
+    let worker = null;
+
+    function log(msg, cls = 'info') {
+      const ts = new Date().toISOString().split('T')[1].replace('Z','');
+      const line = document.createElement('div');
+      line.className = cls;
+      line.textContent = `[${ts}] ${msg}`;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function clearLog() { logEl.innerHTML = ''; }
+
+    // Intercept stderr/stdout from the Emscripten module
+    var Module = {
+      // Emscripten will look for this global
+      print: function(text) { log(text, 'info'); },
+      printErr: function(text) {
+        // Parse our server's tagged output
+        if (text.includes('FATAL:') || text.includes('error')) {
+          log(text, 'err');
+        } else if (text.includes('[TLS]') && text.includes('OK')) {
+          log(text, 'ok');
+        } else if (text.includes('Listening') || text.includes('Waiting') || text.includes('Handshake completed')) {
+          log(text, 'ok');
+        } else {
+          log(text, 'info');
+        }
+
+        // Extract cert hash if present (from build-time embedding)
+        // The hash is printed at startup from our C code
+      },
+      // Don't exit the runtime when main() returns
+      noExitRuntime: false,
+    };
+
+    // Make Module global so the Emscripten script finds it
+    window.Module = Module;
+
+    async function startServer() {
+      document.getElementById('btn-start').disabled = true;
+      document.getElementById('btn-stop').disabled = false;
+
+      log('Loading QUIC echo server...', 'info');
+
+      // Display the cert hash (embedded at build time in the HTML)
+      const certHash = document.querySelector('meta[name="cert-hash-b64"]');
+      if (certHash) {
+        certHashEl.innerHTML = `<span class="warn">Cert SHA-256 (base64):</span> ${certHash.content}`;
+      }
+
+      try {
+        // Load the Emscripten-generated JS which will start the server
+        const script = document.createElement('script');
+        script.src = 'quic_echo_server.js';
+        script.onerror = () => log('Failed to load quic_echo_server.js', 'err');
+        document.body.appendChild(script);
+        log('Script loaded, initializing...', 'info');
+      } catch (e) {
+        log(`Error: ${e.message}`, 'err');
+        document.getElementById('btn-start').disabled = false;
+        document.getElementById('btn-stop').disabled = true;
+      }
+    }
+
+    function stopServer() {
+      log('Stopping server (page reload required for full cleanup)', 'warn');
+      // Emscripten doesn't have clean shutdown via JS easily,
+      // so we just note it. Real stop = reload page.
+      document.getElementById('btn-stop').disabled = true;
+      document.getElementById('btn-start').disabled = true;
+    }
+
+    log('Ready. Click "Start Server" to begin.', 'ok');
+    log('This requires Direct Sockets API (IWA context).', 'warn');
+  </script>
+</body>
+</html>
