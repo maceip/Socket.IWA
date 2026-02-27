@@ -8,6 +8,13 @@ on:
   workflow_dispatch:
 
 jobs:
+  check-js-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: syntax check user-facing JS API
+        run: node --check api/direct_sockets_api.js
+
   build-wasm:
     runs-on: ubuntu-latest
     steps:
@@ -15,6 +22,7 @@ jobs:
 
       - name: clone dependencies
         run: |
+          set -euo pipefail
           git clone --depth 1 https://github.com/wolfSSL/wolfssl.git
           git clone --depth 1 https://github.com/ngtcp2/ngtcp2.git
           git clone --depth 1 https://github.com/ngtcp2/nghttp3.git
@@ -23,6 +31,7 @@ jobs:
 
       - name: build quic echo server wasm
         run: |
+          set -euo pipefail
           mkdir -p build-output
           docker run --rm \
             -v "${{ github.workspace }}:/src" \
@@ -49,6 +58,7 @@ jobs:
 
       - name: clone dependencies
         run: |
+          set -euo pipefail
           git clone --depth 1 https://github.com/wolfSSL/wolfssl.git
           git clone --depth 1 https://github.com/ngtcp2/ngtcp2.git
           git clone --depth 1 https://github.com/ngtcp2/nghttp3.git
@@ -56,11 +66,15 @@ jobs:
           cd nghttp3 && git submodule update --init --depth 1 && cd ..
 
       - name: build native baseline + session ticket test
-        run: bash stress-test/native-baseline/build_native.sh
+        run: |
+          set -euo pipefail
+          bash stress-test/native-baseline/build_native.sh
 
       - name: run session ticket test
         run: |
+          set -euo pipefail
           ./stress-test/native-baseline/build/quic_echo_server_native &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
           sleep 1
           ./stress-test/native-baseline/build/test_session_ticket
-          kill %1 2>/dev/null || true

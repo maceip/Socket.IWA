@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>WebTransport IWA Example</title>
+<script type="module">
+  const log = (...args) => {
+    const el = document.getElementById('log');
+    el.textContent += `${args.join(' ')}\n`;
+  };
+
+  const transport = new WebTransport('https://127.0.0.1:4433/wt');
+  await transport.ready;
+  log('connected');
+
+  const writer = transport.datagrams.writable.getWriter();
+  await writer.write(new TextEncoder().encode('hello over webtransport'));
+  writer.releaseLock();
+
+  const reader = transport.datagrams.readable.getReader();
+  const { value } = await reader.read();
+  if (value) log('received', new TextDecoder().decode(value));
+</script>
+<pre id="log"></pre>
