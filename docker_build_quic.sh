@@ -1,28 +1,32 @@
 #!/bin/bash
 set -e
 
-EMDIR=/emsdk/upstream/emscripten
-INSTALL_PREFIX=/build/deps
+EMDIR="${EMDIR:-/emsdk/upstream/emscripten}"
+SRCDIR="${SRCDIR:-/src}"
+BUILDDIR="${BUILDDIR:-/build}"
+INSTALL_PREFIX="${INSTALL_PREFIX:-$BUILDDIR/deps}"
+
+echo "emscripten: $EMDIR"
+echo "source:     $SRCDIR"
+echo "build:      $BUILDDIR"
+echo "prefix:     $INSTALL_PREFIX"
 
 # ============================================================
-# Phase 1: Patch Emscripten for Direct Sockets (same as before)
+# Phase 1: Patch Emscripten for Direct Sockets
 # ============================================================
 
-# 1. Add DIRECT_SOCKETS setting to settings.js
 if ! grep -q 'var DIRECT_SOCKETS' "$EMDIR/src/settings.js"; then
   sed -i '/^var PROXY_POSIX_SOCKETS = false;/a\
 var DIRECT_SOCKETS = false;' "$EMDIR/src/settings.js"
   echo "Patched settings.js"
 fi
 
-# 2. Guard default socket syscalls in libsyscall.js
 if ! grep -q 'DIRECT_SOCKETS' "$EMDIR/src/lib/libsyscall.js"; then
   sed -i 's/^#if PROXY_POSIX_SOCKETS == 0 && WASMFS == 0$/#if PROXY_POSIX_SOCKETS == 0 \&\& WASMFS == 0 \&\& DIRECT_SOCKETS == 0/' \
     "$EMDIR/src/lib/libsyscall.js"
   echo "Patched libsyscall.js guard"
 fi
 
-# 3. Patch fd_close in libwasi.js
 if ! grep -q 'DIRECT_SOCKETS' "$EMDIR/src/lib/libwasi.js"; then
 python3 -c "
 path = '$EMDIR/src/lib/libwasi.js'
@@ -54,11 +58,9 @@ print('Patched libwasi.js')
 "
 fi
 
-# 4. Copy our new library file
-cp /src/emscripten/src/lib/libdirectsockets.js "$EMDIR/src/lib/libdirectsockets.js"
+cp "$SRCDIR/emscripten/src/lib/libdirectsockets.js" "$EMDIR/src/lib/libdirectsockets.js"
 echo "Copied libdirectsockets.js"
 
-# 5. Register libdirectsockets.js in modules.mjs
 if ! grep -q 'libdirectsockets' "$EMDIR/src/modules.mjs"; then
 python3 -c "
 path = '$EMDIR/src/modules.mjs'
@@ -84,7 +86,6 @@ print('Patched modules.mjs')
 "
 fi
 
-# 6. Patch syscall stubs to remove setsockopt C stub
 if grep -q 'weak int __syscall_setsockopt' "$EMDIR/system/lib/libc/emscripten_syscall_stubs.c" 2>/dev/null; then
 python3 -c "
 path = '$EMDIR/system/lib/libc/emscripten_syscall_stubs.c'
@@ -105,7 +106,6 @@ print('Patched emscripten_syscall_stubs.c')
 "
 fi
 
-# 7. Clear emscripten cache
 rm -rf "$EMDIR/cache"
 echo "Cleared cache"
 
@@ -116,9 +116,9 @@ echo ""
 echo "=== Building wolfSSL ==="
 echo ""
 
-mkdir -p /build/wolfssl
-cd /build/wolfssl
-emcmake cmake /src/wolfssl \
+mkdir -p "$BUILDDIR/wolfssl"
+cd "$BUILDDIR/wolfssl"
+emcmake cmake "$SRCDIR/wolfssl" \
   -DWOLFSSL_QUIC=yes \
   -DWOLFSSL_SESSION_TICKET=yes \
   -DWOLFSSL_CERTGEN=yes \
@@ -142,10 +142,9 @@ echo ""
 echo "=== Building nghttp3 ==="
 echo ""
 
-# Patch nghttp3 to add SETTINGS_WT_MAX_SESSIONS for WebTransport
-if ! grep -q 'WT_MAX_SESSIONS' /src/nghttp3/lib/nghttp3_stream.c; then
+if ! grep -q 'WT_MAX_SESSIONS' "$SRCDIR/nghttp3/lib/nghttp3_stream.c"; then
 python3 -c "
-path = '/src/nghttp3/lib/nghttp3_stream.c'
+path = '$SRCDIR/nghttp3/lib/nghttp3_stream.c'
 with open(path) as f:
     content = f.read()
 
@@ -177,9 +176,9 @@ print('Patched nghttp3_stream.c with SETTINGS_WT_MAX_SESSIONS')
 "
 fi
 
-mkdir -p /build/nghttp3
-cd /build/nghttp3
-emcmake cmake /src/nghttp3 \
+mkdir -p "$BUILDDIR/nghttp3"
+cd "$BUILDDIR/nghttp3"
+emcmake cmake "$SRCDIR/nghttp3" \
   -DENABLE_LIB_ONLY=ON \
   -DENABLE_STATIC_LIB=ON \
   -DENABLE_SHARED_LIB=OFF \
@@ -199,9 +198,9 @@ echo ""
 echo "=== Building ngtcp2 ==="
 echo ""
 
-mkdir -p /build/ngtcp2
-cd /build/ngtcp2
-emcmake cmake /src/ngtcp2 \
+mkdir -p "$BUILDDIR/ngtcp2"
+cd "$BUILDDIR/ngtcp2"
+emcmake cmake "$SRCDIR/ngtcp2" \
   -DENABLE_WOLFSSL=ON \
   -DENABLE_OPENSSL=OFF \
   -DENABLE_GNUTLS=OFF \
@@ -224,13 +223,13 @@ emmake make install 2>&1
 echo "ngtcp2 built and installed"
 
 # ============================================================
-# Phase 5: Compile test program
+# Phase 5: Compile test programs
 # ============================================================
 echo ""
 echo "=== Compiling test_direct_sockets.cpp ==="
 echo ""
 
-em++ /src/test_direct_sockets.cpp -o /build/test.js \
+em++ "$SRCDIR/test_direct_sockets.cpp" -o "$BUILDDIR/test.js" \
   -sDIRECT_SOCKETS \
   -sJSPI \
   -sPROXY_TO_PTHREAD \
@@ -245,7 +244,7 @@ echo ""
 echo "=== Compiling test_quic_link.cpp ==="
 echo ""
 
-em++ /src/test_quic_link.cpp -o /build/test_quic.js \
+em++ "$SRCDIR/test_quic_link.cpp" -o "$BUILDDIR/test_quic.js" \
   -sDIRECT_SOCKETS \
   -sJSPI \
   -sPROXY_TO_PTHREAD \
@@ -266,14 +265,14 @@ echo ""
 echo "=== Generating TLS certificate ==="
 echo ""
 
-bash /src/gen_cert.sh /src
-cat /src/cert_data.h | head -5
+bash "$SRCDIR/gen_cert.sh" "$SRCDIR"
+head -5 "$SRCDIR/cert_data.h"
 
 echo ""
 echo "=== Compiling quic_echo_server.c ==="
 echo ""
 
-emcc /src/quic_echo_server.c -o /build/quic_echo_server.js \
+emcc "$SRCDIR/quic_echo_server.c" -o "$BUILDDIR/quic_echo_server.js" \
   -sDIRECT_SOCKETS \
   -sJSPI \
   -sPROXY_TO_PTHREAD \
@@ -295,7 +294,7 @@ emcc /src/quic_echo_server.c -o /build/quic_echo_server.js \
 
 echo ""
 echo "=== Build complete ==="
-ls -la /build/test.* /build/test_quic.* /build/quic_echo_server.* 2>/dev/null
+ls -la "$BUILDDIR/test."* "$BUILDDIR/test_quic."* "$BUILDDIR/quic_echo_server."* 2>/dev/null
 echo ""
 echo "=== Installed libraries ==="
 ls -la "$INSTALL_PREFIX/lib/"*.a 2>/dev/null || echo "No .a files"
