@@ -27,7 +27,7 @@ Socket.IWA is a full QUIC server stack that runs in the browser with real UDP ne
 - HTTP/3 with Extended CONNECT
 - WebTransport (DATAGRAM frames + bidi/uni streams)
 - WebSocket over HTTP/3 (RFC 9220)
-- Session tickets for 0-RTT roaming client handshakes
+- Session tickets for 0-RTT resumption
 
 ## Performance
 
