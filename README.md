@@ -1,3 +1,5 @@
+<img height="128" alt="socket iwa-removebg-preview" src="https://github.com/user-attachments/assets/9a9f761a-91cc-4e2b-ab67-ef73dfb18e3c" />
+
 # socket.iwa
 
 Socket.IWA is a full QUIC server stack that runs in the browser with real UDP networking. No WebSocket tunneling, no server-side proxies — actual `bind()` / `recvfrom()` / `sendto()` over the network
@@ -36,19 +38,19 @@ At realistic traffic rates, WASM is indistinguishable from native.
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│  Chrome Isolated Web App                    │
-│  ┌───────────────────────────────────────┐  │
-│  │  quic_echo_server.wasm                │  │
-│  │  (ngtcp2 + wolfSSL + nghttp3)         │  │
-│  │           ↕ JSPI async bridge         │  │
-│  │  libdirectsockets.js                  │  │
-│  │  (Emscripten syscall override)        │  │
-│  └───────────┬───────────────────────────┘  │
-│              ↕ Direct Sockets API           │
-└──────────────┬──────────────────────────────┘
-               ↕ UDP kernel sockets
-               │
+    ┌─────────────────────────────────────────────┐
+    │  Chrome Isolated Web App                    │
+    │  ┌───────────────────────────────────────┐  │
+    │  │  quic_echo_server.wasm                │  │
+    │  │  (ngtcp2 + wolfSSL + nghttp3)         │  │
+    │  │           ↕ JSPI async bridge         │  │
+    │  │  libdirectsockets.js                  │  │
+    │  │  (Emscripten syscall override)        │  │
+    │  └───────────┬───────────────────────────┘  │
+    │              ↕ Direct Sockets API           │
+    └──────────────┬──────────────────────────────┘
+                   ↕ UDP kernel sockets
+                   │
 Incoming ───▶ [ Network ] ───▶ Outgoing
 ```
 
