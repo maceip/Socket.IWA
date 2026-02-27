@@ -83,6 +83,8 @@ var DirectSocketsLibrary = {
         acceptReader: null,
         readBuffer: null,
         readBufferOffset: 0,
+        multicastController: null,
+        joinedMulticastGroups: [],
         error: 0,
       };
       DIRECT_SOCKETS.sockets[fd] = sock;
@@ -116,6 +118,62 @@ var DirectSocketsLibrary = {
       if (sock.options.receiveBufferSize > 0) opts.receiveBufferSize = sock.options.receiveBufferSize;
       if (sock.family === {{{ cDefs.AF_INET6 }}}) opts.dnsQueryType = 'ipv6';
       return opts;
+    },
+
+    attachMulticastController(sock, openInfo) {
+      var controller = (openInfo && openInfo.multicast) || (sock.udpSocket && sock.udpSocket.multicast) || null;
+      sock.multicastController = controller;
+      if (controller && Array.isArray(controller.joinedGroups)) {
+        sock.joinedMulticastGroups = controller.joinedGroups.slice();
+      }
+    },
+
+    parseIpMreq(ptr, optlen) {
+      // struct ip_mreq { struct in_addr imr_multiaddr; struct in_addr imr_interface; }
+      if (!ptr || optlen < 8) return null;
+      var groupAddr = inetNtop4(ptr);
+      var ifaceAddr = inetNtop4(ptr + 4);
+      return { groupAddress: groupAddr, localAddress: ifaceAddr !== '0.0.0.0' ? ifaceAddr : undefined };
+    },
+
+    parseIpv6Mreq(ptr, optlen) {
+      // struct ipv6_mreq { struct in6_addr ipv6mr_multiaddr; unsigned int ipv6mr_interface; }
+      if (!ptr || optlen < 20) return null;
+      var groupAddress = inetNtop6(ptr);
+      var interfaceIndex = HEAPU32[(ptr + 16) >> 2];
+      return { groupAddress: groupAddress, interfaceIndex: interfaceIndex || undefined };
+    },
+
+    async joinMulticastGroup(sock, membership) {
+      if (!sock.multicastController || !membership || !membership.groupAddress) {
+        return -{{{ cDefs.ENOPROTOOPT }}};
+      }
+      try {
+        var result = await sock.multicastController.joinGroup(membership.groupAddress, membership);
+        sock.joinedMulticastGroups = Array.isArray(sock.multicastController.joinedGroups)
+          ? sock.multicastController.joinedGroups.slice()
+          : sock.joinedMulticastGroups;
+        return result === undefined ? 0 : 0;
+      } catch (e) {
+        if (e.name === 'NotAllowedError') return -{{{ cDefs.EACCES }}};
+        return -{{{ cDefs.EINVAL }}};
+      }
+    },
+
+    async leaveMulticastGroup(sock, membership) {
+      if (!sock.multicastController || !membership || !membership.groupAddress) {
+        return -{{{ cDefs.ENOPROTOOPT }}};
+      }
+      try {
+        var result = await sock.multicastController.leaveGroup(membership.groupAddress, membership);
+        sock.joinedMulticastGroups = Array.isArray(sock.multicastController.joinedGroups)
+          ? sock.multicastController.joinedGroups.slice()
+          : sock.joinedMulticastGroups.filter((g) => g.groupAddress !== membership.groupAddress);
+        return result === undefined ? 0 : 0;
+      } catch (e) {
+        if (e.name === 'NotAllowedError') return -{{{ cDefs.EACCES }}};
+        return -{{{ cDefs.EINVAL }}};
+      }
     },
 
     // Read from Direct Sockets reader, filling internal buffer.
@@ -253,6 +311,7 @@ var DirectSocketsLibrary = {
         sock.udpSocket = udpSocket;
         sock.reader = openInfo.readable.getReader();
         sock.writer = openInfo.writable.getWriter();
+        DIRECT_SOCKETS.attachMulticastController(sock, openInfo);
         sock.remoteAddress = openInfo.remoteAddress || dest.addr;
         sock.remotePort = openInfo.remotePort || dest.port;
         sock.localAddress = openInfo.localAddress || '0.0.0.0';
@@ -302,6 +361,7 @@ var DirectSocketsLibrary = {
         sock.udpSocket = udpSocket;
         sock.reader = openInfo.readable.getReader();
         sock.writer = openInfo.writable.getWriter();
+        DIRECT_SOCKETS.attachMulticastController(sock, openInfo);
         sock.localAddress = openInfo.localAddress || bindAddr.addr;
         sock.localPort = openInfo.localPort || bindAddr.port;
         sock.state = 'bound';
@@ -595,7 +655,8 @@ var DirectSocketsLibrary = {
   },
 
   __syscall_setsockopt__deps: ['$DIRECT_SOCKETS'],
-  __syscall_setsockopt: (fd, level, optname, optval, optlen) => {
+  __syscall_setsockopt__async: true,
+  __syscall_setsockopt: async (fd, level, optname, optval, optlen) => {
     var sock = DIRECT_SOCKETS.getSocket(fd);
     if (!sock) return -{{{ cDefs.EBADF }}};
 
@@ -650,6 +711,36 @@ var DirectSocketsLibrary = {
 #if SOCKET_DEBUG
           dbg(`direct_sockets: setsockopt ignoring IPPROTO_TCP option ${optname}`);
 #endif
+          return 0;
+      }
+    } else if (level === 0 /*IPPROTO_IP*/) {
+      switch (optname) {
+        case 33: // IP_MULTICAST_TTL
+          sock.options.multicastTtl = HEAPU8[optval];
+          return 0;
+        case 34: // IP_MULTICAST_LOOP
+          sock.options.multicastLoopback = !!HEAPU8[optval];
+          return 0;
+        case 35: // IP_ADD_MEMBERSHIP
+          return DIRECT_SOCKETS.joinMulticastGroup(sock, DIRECT_SOCKETS.parseIpMreq(optval, optlen));
+        case 36: // IP_DROP_MEMBERSHIP
+          return DIRECT_SOCKETS.leaveMulticastGroup(sock, DIRECT_SOCKETS.parseIpMreq(optval, optlen));
+        default:
+          return 0;
+      }
+    } else if (level === 41 /*IPPROTO_IPV6*/) {
+      switch (optname) {
+        case 18: // IPV6_MULTICAST_LOOP
+          sock.options.multicastLoopback = !!HEAPU8[optval];
+          return 0;
+        case 19: // IPV6_MULTICAST_HOPS
+          sock.options.multicastTtl = HEAPU8[optval];
+          return 0;
+        case 20: // IPV6_JOIN_GROUP
+          return DIRECT_SOCKETS.joinMulticastGroup(sock, DIRECT_SOCKETS.parseIpv6Mreq(optval, optlen));
+        case 21: // IPV6_LEAVE_GROUP
+          return DIRECT_SOCKETS.leaveMulticastGroup(sock, DIRECT_SOCKETS.parseIpv6Mreq(optval, optlen));
+        default:
           return 0;
       }
     }

@@ -192,6 +192,8 @@ connection 2 (0-RTT resume):   PASS
 | `docker_build.sh` | Emscripten patches + basic socket test build |
 | `gen_cert.sh` | Generate ECDSA P-256 self-signed cert |
 | `emscripten/src/lib/libdirectsockets.js` | Direct Sockets syscall implementation |
+| `api/direct_sockets_api.js` | Public JS management API for UDP/TCP/TCPServer/Multicast/permissions |
+| `docs/direct_sockets_coverage.md` | Coverage matrix and C-library ecosystem investigation |
 | `stress-test/` | Benchmark scripts, flood tools, native baseline |
 
 ## License
