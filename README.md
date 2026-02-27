@@ -104,6 +104,8 @@ bash stress-test/scripts/benchmark_wasm_vs_native.sh
 
 ## <img  height="120" alt="ddd-removebg-preview" src="https://github.com/user-attachments/assets/d7d78010-a19f-469c-a9da-da1e521a761b"  align="middle"/> Session Tickets 
 
+**TL;DR** — Without session tickets a returning client repeats the full 2-RTT handshake every time (~100 ms at a typical 50 ms one-way datacenter latency). With session tickets the second connection sends data immediately in 0-RTT — zero round trips, zero wait.
+
 The server issues TLS 1.3 session tickets after the first handshake. A returning client can skip the full handshake and send 0-RTT early data on reconnect — cutting one round trip from connection setup.
 <br clear="middle"/>
 
