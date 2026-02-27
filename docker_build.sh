@@ -1,7 +1,13 @@
 #!/bin/bash
 set -e
 
-EMDIR=/emsdk/upstream/emscripten
+EMDIR="${EMDIR:-/emsdk/upstream/emscripten}"
+SRCDIR="${SRCDIR:-/src}"
+BUILDDIR="${BUILDDIR:-/build}"
+
+echo "emscripten: $EMDIR"
+echo "source:     $SRCDIR"
+echo "build:      $BUILDDIR"
 
 # 1. Add DIRECT_SOCKETS setting to settings.js (only if not already present)
 if ! grep -q 'var DIRECT_SOCKETS' "$EMDIR/src/settings.js"; then
@@ -50,7 +56,7 @@ print('Patched libwasi.js')
 fi
 
 # 4. Copy our new library file
-cp /src/emscripten/src/lib/libdirectsockets.js "$EMDIR/src/lib/libdirectsockets.js"
+cp "$SRCDIR/emscripten/src/lib/libdirectsockets.js" "$EMDIR/src/lib/libdirectsockets.js"
 echo "Copied libdirectsockets.js"
 
 # 5. Register libdirectsockets.js in modules.mjs so the JS compiler loads it
@@ -60,7 +66,6 @@ path = '$EMDIR/src/modules.mjs'
 with open(path) as f:
     content = f.read()
 
-# Add after the libsyscall.js conditional block
 old = '''  if (!WASMFS) {
     libraries.push('libsyscall.js');
   }'''
@@ -83,11 +88,10 @@ fi
 # 6. Patch syscall stubs to remove setsockopt C stub (conflicts with our JS impl)
 if grep -q '__syscall_setsockopt' "$EMDIR/system/lib/libc/emscripten_syscall_stubs.c" 2>/dev/null; then
 python3 -c "
-path = '/emsdk/upstream/emscripten/system/lib/libc/emscripten_syscall_stubs.c'
+path = '$EMDIR/system/lib/libc/emscripten_syscall_stubs.c'
 with open(path) as f:
     content = f.read()
 
-# Remove the weak C stub for __syscall_setsockopt so our JS version wins
 old = '''weak int __syscall_setsockopt(int sockfd, int level, int optname, intptr_t optval, size_t optlen, int dummy) {
   REPORT(setsockopt);
   return -ENOPROTOOPT; // The option is unknown at the level indicated.
@@ -110,7 +114,7 @@ echo ""
 echo "=== Compiling test_direct_sockets.cpp ==="
 echo ""
 
-em++ /src/test_direct_sockets.cpp -o /build/test.js \
+em++ "$SRCDIR/test_direct_sockets.cpp" -o "$BUILDDIR/test.js" \
   -sDIRECT_SOCKETS \
   -sJSPI \
   -sPROXY_TO_PTHREAD \
@@ -121,4 +125,4 @@ em++ /src/test_direct_sockets.cpp -o /build/test.js \
 
 echo ""
 echo "=== Build complete ==="
-ls -la /build/test.*
+ls -la "$BUILDDIR/test."*
