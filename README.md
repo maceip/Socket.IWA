@@ -4,8 +4,12 @@
 
 # 𝙎𝙤𝙘𝙠𝙚𝙩.𝙄𝙒𝘼
 
-Socket.IWA is a full QUIC server stack that runs in the browser with real UDP networking. No WebSocket tunneling, no server-side proxies — actual `bind()` / `recvfrom()` / `sendto()` over the network.
+Socket.IWA is a full QUIC server stack that runs in the browser with real UDP networking. No WebSocket tunneling, no server-side proxies — actual `bind()` / `recvfrom()` / `sendto()` over the network. It turns your browser into a high performance, secure server that can listen on _most_ ports, serve websockets; webtransport; http3; *anything* at nearly line speed. + full certificate lifecycle implementation for webtransport:// included 
 </div>
+
+> [!IMPORTANT]
+> As of Feb 2026, [browser support is evovling. ](https://caniuse.com/?search=direct+sockets) chrome support requires sockets be wrapped in an [isolated web app](https://developer.chrome.com/docs/iwa/introduction)
+
 
 <br clear="left" />
 
