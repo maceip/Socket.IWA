@@ -1,5 +1,10 @@
 # Cloned dependencies (recreate via docker_build scripts)
-emscripten/
+emscripten/*
+!emscripten/src/
+emscripten/src/*
+!emscripten/src/lib/
+emscripten/src/lib/*
+!emscripten/src/lib/libdirectsockets.js
 wolfssl/
 mvfst/
 ngtcp2/

@@ -8,21 +8,59 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-wasm:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: false
+
+      - name: clone dependencies
+        run: |
+          git clone --depth 1 https://github.com/wolfSSL/wolfssl.git
+          git clone --depth 1 https://github.com/ngtcp2/ngtcp2.git
+          git clone --depth 1 https://github.com/ngtcp2/nghttp3.git
+          cd ngtcp2 && git submodule update --init --depth 1 && cd ..
+          cd nghttp3 && git submodule update --init --depth 1 && cd ..
 
       - name: build quic echo server wasm
-        run: bash docker_build_quic.sh
+        run: |
+          mkdir -p build-output
+          docker run --rm \
+            -v "${{ github.workspace }}:/src" \
+            -v "${{ github.workspace }}/build-output:/build" \
+            emscripten/emsdk:5.0.1 \
+            bash /src/docker_build_quic.sh
 
       - name: upload wasm artifacts
         uses: actions/upload-artifact@v4
         with:
           name: quic-echo-server
           path: |
-            quic_echo_server.js
-            quic_echo_server.wasm
+            build-output/quic_echo_server.js
+            build-output/quic_echo_server.wasm
           retention-days: 30
+
+  build-native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install build deps
+        run: sudo apt-get update && sudo apt-get install -y cmake
+
+      - name: clone dependencies
+        run: |
+          git clone --depth 1 https://github.com/wolfSSL/wolfssl.git
+          git clone --depth 1 https://github.com/ngtcp2/ngtcp2.git
+          git clone --depth 1 https://github.com/ngtcp2/nghttp3.git
+          cd ngtcp2 && git submodule update --init --depth 1 && cd ..
+          cd nghttp3 && git submodule update --init --depth 1 && cd ..
+
+      - name: build native baseline + session ticket test
+        run: bash stress-test/native-baseline/build_native.sh
+
+      - name: run session ticket test
+        run: |
+          ./stress-test/native-baseline/build/quic_echo_server_native &
+          sleep 1
+          ./stress-test/native-baseline/build/test_session_ticket
+          kill %1 2>/dev/null || true

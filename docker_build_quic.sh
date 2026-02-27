@@ -129,7 +129,7 @@ emcmake cmake /src/wolfssl \
   -DBUILD_SHARED_LIBS=OFF \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" \
-  -DCMAKE_C_FLAGS="-pthread" \
+  -DCMAKE_C_FLAGS="-pthread -DWOLFSSL_EARLY_DATA" \
   2>&1
 emmake make -j$(nproc) 2>&1
 emmake make install 2>&1

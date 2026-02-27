@@ -95,6 +95,80 @@ python3 stress-test/scripts/quic_flood.py --mode burst --packets 50000
 bash stress-test/scripts/benchmark_wasm_vs_native.sh
 ```
 
+## Session Tickets
+
+The server issues TLS 1.3 session tickets after the first handshake. A returning client can skip the full handshake and send 0-RTT early data on reconnect — cutting one round trip from connection setup.
+
+```
+Connection 1 — full handshake                    2 RTT ≈ 100ms @ 50ms ping
+
+    Client                              Server
+      │                                    │
+      │─── Initial [CRYPTO ClientHello] ──▶│          ╮
+      │                                    │          │ RTT 1
+      │◀── Initial [CRYPTO ServerHello] ───│          │
+      │◀── Handshake [CRYPTO Cert+Fin] ────│          ╯
+      │◀── 1-RTT [NEW_CONNECTION_ID] ──────│
+      │                                    │
+      │─── Handshake [CRYPTO Finished] ───▶│          ╮
+      │─── 1-RTT [STREAM "hello"] ────────▶│          │ RTT 2
+      │                                    │          │
+      │◀── 1-RTT [HANDSHAKE_DONE] ─────────│          ╯
+      │◀── 1-RTT [CRYPTO NewSessionTicket]─│  ← ticket saved
+      │◀── 1-RTT [STREAM "hello"] ─────────│  ← echo received
+      │                                    │
+
+Connection 2 — 0-RTT resumption                 0 RTT ≈ 0ms (data in flight)
+
+    Client                              Server
+      │                                    │
+      │─── Initial [CRYPTO ClientHello] ──▶│  ← includes session ticket
+      │─── 0-RTT [STREAM "hello"] ────────▶│  ← data sent immediately
+      │                                    │          ╮
+      │◀── Initial [CRYPTO ServerHello] ───│          │ RTT 1
+      │◀── Handshake [CRYPTO Fin] ─────────│          ╯
+      │◀── 1-RTT [STREAM "hello"] ─────────│  ← echo received
+      │                                    │
+```
+
+To test locally against the native build:
+
+```bash
+# build everything (wolfSSL + nghttp3 + ngtcp2 + server + test client)
+bash stress-test/native-baseline/build_native.sh
+
+# start the echo server
+./stress-test/native-baseline/build/quic_echo_server_native &
+
+# run the session ticket test
+./stress-test/native-baseline/build/test_session_ticket
+```
+
+The test makes two connections to `127.0.0.1:4433`:
+
+1. **Connection 1** — full TLS 1.3 handshake, sends "hello from 0-RTT", receives echo, saves the session ticket and transport params
+2. **Connection 2** — resumes with the saved ticket, sends early data in the 0-RTT packet (before the handshake completes), receives echo
+
+Expected output:
+
+```
+=== Connection 1 (full handshake) ===
+[QUIC] handshake completed
+[QUIC] sent 'hello from 0-RTT' (16 bytes)
+[TICKET] saved session (301 bytes)
+[ECHO] received: 'hello from 0-RTT' (16 bytes)
+
+=== Connection 2 (0-RTT resumption) ===
+[TICKET] restored session, 0-RTT enabled
+[0-RTT] restored transport params (40 bytes)
+[QUIC] sent 'hello from 0-RTT' (16 bytes) [0-RTT]
+[ECHO] received: 'hello from 0-RTT' (16 bytes)
+
+=== Summary ===
+connection 1 (full handshake): PASS
+connection 2 (0-RTT resume):   PASS
+```
+
 ## Files
 
 | File | Description |

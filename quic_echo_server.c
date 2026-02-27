@@ -69,6 +69,7 @@ typedef struct stream_data {
     size_t       sendlen;
     size_t       sendoff;
     int          fin_received;
+    int          fin_sent;
     /* HTTP/3 request info */
     char         method[16];
     char         path[256];
@@ -708,6 +709,14 @@ static int setup_ssl_ctx(void) {
         return -1;
     }
 
+    /* Session tickets + 0-RTT early data */
+#ifdef WOLFSSL_EARLY_DATA
+    wolfSSL_CTX_set_max_early_data(g_ssl_ctx, UINT32_MAX);
+    fprintf(stderr, "[TLS] 0-RTT early data enabled\n");
+#endif
+    static const unsigned char sid_ctx[] = "quic_echo_server";
+    wolfSSL_CTX_set_session_id_context(g_ssl_ctx, sid_ctx, sizeof(sid_ctx) - 1);
+
     fprintf(stderr, "[TLS] Loading cert (%d bytes) and key (%d bytes)...\n",
             cert_der_len, key_der_len);
 
@@ -853,8 +862,10 @@ static int write_streams(server_conn *sc) {
             if (fin) flags |= NGTCP2_WRITE_STREAM_FLAG_FIN;
         } else {
             /* Raw echo mode — find stream with pending data */
+            flags = 0; /* no MORE for raw echo — flush each packet */
             for (stream_data *s = sc->streams; s; s = s->next) {
-                if (s->sendoff < s->sendlen || s->fin_received) {
+                if (s->sendoff < s->sendlen ||
+                    (s->fin_received && !s->fin_sent)) {
                     stream_id = s->stream_id;
                     if (s->sendoff < s->sendlen) {
                         datav.base = s->sendbuf + s->sendoff;
@@ -863,6 +874,7 @@ static int write_streams(server_conn *sc) {
                     }
                     if (s->fin_received && s->sendoff >= s->sendlen) {
                         flags |= NGTCP2_WRITE_STREAM_FLAG_FIN;
+                        s->fin_sent = 1;
                     }
                     break;
                 }
@@ -898,6 +910,10 @@ static int write_streams(server_conn *sc) {
             if (nwrite == NGTCP2_ERR_STREAM_SHUT_WR) {
                 if (sc->h3conn) {
                     nghttp3_conn_shutdown_stream_write(sc->h3conn, stream_id);
+                } else {
+                    /* Raw echo: mark stream done */
+                    stream_data *s = find_stream(sc, stream_id);
+                    if (s) s->sendoff = s->sendlen;
                 }
                 continue;
             }
@@ -1043,6 +1059,9 @@ static server_conn *create_server_conn(int fd,
     }
     wolfSSL_set_app_data(sc->ssl, &sc->conn_ref);
     wolfSSL_set_accept_state(sc->ssl);
+#ifdef WOLFSSL_EARLY_DATA
+    wolfSSL_set_quic_early_data_enabled(sc->ssl, 1);
+#endif
 
     ngtcp2_conn_set_tls_native_handle(sc->conn, sc->ssl);
 

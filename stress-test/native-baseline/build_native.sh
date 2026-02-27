@@ -23,6 +23,7 @@ cmake "$SRCDIR/wolfssl" \
     -DBUILD_SHARED_LIBS=OFF \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="$DEPS" \
+    -DCMAKE_C_FLAGS="-DWOLFSSL_EARLY_DATA" \
     2>&1 | tail -3
 make -j$(nproc) 2>&1 | tail -1
 make install 2>&1 | tail -1
@@ -72,10 +73,19 @@ cc -O2 -o "$BUILDDIR/quic_echo_server_native" "$SRCDIR/quic_echo_server.c" \
     -I"$DEPS/include" \
     -L"$DEPS/lib" \
     -lngtcp2 -lngtcp2_crypto_wolfssl -lnghttp3 -lwolfssl \
-    -DNGTCP2_STATICLIB -DNGHTTP3_STATICLIB \
+    -DNGTCP2_STATICLIB -DNGHTTP3_STATICLIB -DWOLFSSL_EARLY_DATA \
+    -lpthread -lm 2>&1
+
+echo "=== Compiling test_session_ticket (native) ==="
+cc -O2 -o "$BUILDDIR/test_session_ticket" "$SRCDIR/test_session_ticket.c" \
+    -I"$DEPS/include" \
+    -L"$DEPS/lib" \
+    -lngtcp2 -lngtcp2_crypto_wolfssl -lnghttp3 -lwolfssl \
+    -DNGTCP2_STATICLIB -DNGHTTP3_STATICLIB -DWOLFSSL_EARLY_DATA \
     -lpthread -lm 2>&1
 
 echo ""
 echo "=== Native build complete ==="
-ls -la "$BUILDDIR/quic_echo_server_native"
+ls -la "$BUILDDIR/quic_echo_server_native" "$BUILDDIR/test_session_ticket"
 echo "Run: $BUILDDIR/quic_echo_server_native"
+echo "Test: $BUILDDIR/test_session_ticket"
