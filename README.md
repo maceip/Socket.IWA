@@ -1,9 +1,16 @@
-<img height="128" alt="socket iwa-removebg-preview" src="https://github.com/user-attachments/assets/9a9f761a-91cc-4e2b-ab67-ef73dfb18e3c" />
+<img align="left" height="128" alt="socket iwa" src="https://github.com/user-attachments/assets/9a9f761a-91cc-4e2b-ab67-ef73dfb18e3c" />
 
-# socket.iwa
+<div style="overflow: hidden;">
 
-Socket.IWA is a full QUIC server stack that runs in the browser with real UDP networking. No WebSocket tunneling, no server-side proxies — actual `bind()` / `recvfrom()` / `sendto()` over the network
-.
+# 𝙎𝙤𝙘𝙠𝙚𝙩.𝙄𝙒𝘼
+
+Socket.IWA is a full QUIC server stack that runs in the browser with real UDP networking. No WebSocket tunneling, no server-side proxies — actual `bind()` / `recvfrom()` / `sendto()` over the network.
+</div>
+
+<br clear="left" />
+
+
+
 ### QUIC Server Stack
 
 | Layer | Library | Version |
@@ -42,10 +49,10 @@ At realistic traffic rates, WASM is indistinguishable from native.
     │  Chrome Isolated Web App                    │
     │  ┌───────────────────────────────────────┐  │
     │  │  quic_echo_server.wasm                │  │
-    │  │  (ngtcp2 + wolfSSL + nghttp3)         │  │
+    │  │           ⁿᵍᵗᶜᵖ² ⁺ ʷᵒˡᶠˢˢᴸ ⁺ ⁿᵍʰᵗᵗᵖ³  │  │
     │  │           ↕ JSPI async bridge         │  │
     │  │  libdirectsockets.js                  │  │
-    │  │  (Emscripten syscall override)        │  │
+    │  │           ᴱᵐˢᶜʳᶦᵖᵗᵉⁿ ˢʸˢᶜᵃˡˡ ᵒᵛᵉʳʳᶦᵈᵉ │  │
     │  └───────────┬───────────────────────────┘  │
     │              ↕ Direct Sockets API           │
     └──────────────┬──────────────────────────────┘
@@ -75,9 +82,9 @@ Produces `quic_echo_server.js` + `quic_echo_server.wasm`.
 bash stress-test/native-baseline/build_native.sh
 ```
 
-### IWA web app
+### WebTransfer Isolated Web App Server
 
-The Chrome Isolated Web App is in a separate repo: maceip/stare-socket
+The Chrome Isolated Web App is in a separate repo: [maceip/stare-socket](https://github.com/maceip/stare-socket)
 
 ## Emscripten Patches
 
@@ -95,41 +102,42 @@ python3 stress-test/scripts/quic_flood.py --mode burst --packets 50000
 bash stress-test/scripts/benchmark_wasm_vs_native.sh
 ```
 
-## Session Tickets
+## <img  height="120" alt="ddd-removebg-preview" src="https://github.com/user-attachments/assets/d7d78010-a19f-469c-a9da-da1e521a761b"  align="middle"/> Session Tickets 
 
 The server issues TLS 1.3 session tickets after the first handshake. A returning client can skip the full handshake and send 0-RTT early data on reconnect — cutting one round trip from connection setup.
+<br clear="middle"/>
 
-```
+<pre style="font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; line-height: 1.2; font-size: 13px;">
 Connection 1 — full handshake                    2 RTT ≈ 100ms @ 50ms ping
 
-    Client                              Server
-      │                                    │
-      │─── Initial [CRYPTO ClientHello] ──▶│          ╮
-      │                                    │          │ RTT 1
-      │◀── Initial [CRYPTO ServerHello] ───│          │
-      │◀── Handshake [CRYPTO Cert+Fin] ────│          ╯
-      │◀── 1-RTT [NEW_CONNECTION_ID] ──────│
-      │                                    │
-      │─── Handshake [CRYPTO Finished] ───▶│          ╮
-      │─── 1-RTT [STREAM "hello"] ────────▶│          │ RTT 2
-      │                                    │          │
-      │◀── 1-RTT [HANDSHAKE_DONE] ─────────│          ╯
-      │◀── 1-RTT [CRYPTO NewSessionTicket]─│  ← ticket saved
-      │◀── 1-RTT [STREAM "hello"] ─────────│  ← echo received
-      │                                    │
+    Client                                  Server
+      │                                       │
+      ├─── Initial [CRYPTO ClientHello] ───▶  │ ╮
+      │                                       │ │ RTT 1
+      │◀── Initial [CRYPTO ServerHello] ──────┤ │
+      │◀── Handshake [CRYPTO Cert+Fin] ───────┤ ╯
+      │◀── 1-RTT [NEW_CONNECTION_ID] ─────────┤
+      │                                       │
+      ├─── Handshake [CRYPTO Finished] ────▶  │ ╮
+      ├─── 1-RTT [STREAM "hello"] ─────────▶  │ │ RTT 2
+      │                                       │ │
+      │◀── 1-RTT [HANDSHAKE_DONE] ────────────┤ ╯
+      │◀── 1-RTT [CRYPTO NewSessionTicket] ───┤  ← ticket saved
+      │◀── 1-RTT [STREAM "hello"] ────────────┤  ← echo received
+      │                                       │
 
-Connection 2 — 0-RTT resumption                 0 RTT ≈ 0ms (data in flight)
+Connection 2 — 0-RTT resumption                  0 RTT ≈ 0ms (data in flight)
 
-    Client                              Server
-      │                                    │
-      │─── Initial [CRYPTO ClientHello] ──▶│  ← includes session ticket
-      │─── 0-RTT [STREAM "hello"] ────────▶│  ← data sent immediately
-      │                                    │          ╮
-      │◀── Initial [CRYPTO ServerHello] ───│          │ RTT 1
-      │◀── Handshake [CRYPTO Fin] ─────────│          ╯
-      │◀── 1-RTT [STREAM "hello"] ─────────│  ← echo received
-      │                                    │
-```
+    Client                                  Server
+      │                                       │
+      ├─── Initial [CRYPTO ClientHello] ───▶  │  ← includes session ticket
+      ├─── 0-RTT [STREAM "hello"] ─────────▶  │  ← data sent immediately
+      │                                       │ ╮
+      │◀── Initial [CRYPTO ServerHello] ──────┤ │ RTT 1
+      │◀── Handshake [CRYPTO Fin] ────────────┤ ╯
+      │◀── 1-RTT [STREAM "hello"] ────────────┤  ← echo received
+      │                                       │
+</pre>
 
 To test locally against the native build:
 
@@ -143,7 +151,7 @@ bash stress-test/native-baseline/build_native.sh
 # run the session ticket test
 ./stress-test/native-baseline/build/test_session_ticket
 ```
-
+<br clear="left"/>
 The test makes two connections to `127.0.0.1:4433`:
 
 1. **Connection 1** — full TLS 1.3 handshake, sends "hello from 0-RTT", receives echo, saves the session ticket and transport params
