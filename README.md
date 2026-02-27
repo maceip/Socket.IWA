@@ -39,16 +39,17 @@ At realistic traffic rates, WASM is indistinguishable from native.
 ┌─────────────────────────────────────────────┐
 │  Chrome Isolated Web App                    │
 │  ┌───────────────────────────────────────┐  │
-│  │  quic_echo_server.wasm               │  │
-│  │  (ngtcp2 + wolfSSL + nghttp3)        │  │
-│  │         ↕ JSPI async bridge          │  │
-│  │  libdirectsockets.js                 │  │
-│  │  (Emscripten syscall override)       │  │
+│  │  quic_echo_server.wasm                │  │
+│  │  (ngtcp2 + wolfSSL + nghttp3)         │  │
+│  │           ↕ JSPI async bridge         │  │
+│  │  libdirectsockets.js                  │  │
+│  │  (Emscripten syscall override)        │  │
 │  └───────────┬───────────────────────────┘  │
 │              ↕ Direct Sockets API           │
 └──────────────┬──────────────────────────────┘
                ↕ UDP kernel sockets
-           [ Network ]
+               │
+Incoming ───▶ [ Network ] ───▶ Outgoing
 ```
 
 ## Build
