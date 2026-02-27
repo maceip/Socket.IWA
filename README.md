@@ -1,11 +1,6 @@
 # socket.iwa
-Socket.IWA is a library that enables low-latency, bidirectional and event-based communication between two browsers using the direct sockets api.
-
-
-## What this is
-
-A full QUIC server stack to WebAssembly that runs it in the browser with real UDP networking. No WebSocket tunneling, no server-side proxies — actual `bind()` / `recvfrom()` / `sendto()` over the network.
-
+Socket.IWA is a full QUIC server stack to WebAssembly that runs it in the browser with real UDP networking. No WebSocket tunneling, no server-side proxies — actual `bind()` / `recvfrom()` / `sendto()` over the network
+.
 ### QUIC Server Stack
 
 | Layer | Library | Version |
