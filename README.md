@@ -1,5 +1,6 @@
 # socket.iwa
-Socket.IWA is a full QUIC server stack to WebAssembly that runs it in the browser with real UDP networking. No WebSocket tunneling, no server-side proxies — actual `bind()` / `recvfrom()` / `sendto()` over the network
+
+Socket.IWA is a full QUIC server stack that runs in the browser with real UDP networking. No WebSocket tunneling, no server-side proxies — actual `bind()` / `recvfrom()` / `sendto()` over the network
 .
 ### QUIC Server Stack
 
@@ -17,6 +18,7 @@ Socket.IWA is a full QUIC server stack to WebAssembly that runs it in the browse
 - HTTP/3 with Extended CONNECT
 - WebTransport (DATAGRAM frames + bidi/uni streams)
 - WebSocket over HTTP/3 (RFC 9220)
+- Session tickets for 0-RTT roaming client handshakes
 
 ## Performance
 
@@ -72,11 +74,11 @@ bash stress-test/native-baseline/build_native.sh
 
 ### IWA web app
 
-The Chrome Isolated Web App is in a separate repo: maceip/socket-iwa
+The Chrome Isolated Web App is in a separate repo: maceip/stare-socket
 
 ## Emscripten Patches
 
-The key innovation is `emscripten/src/lib/libdirectsockets.js` — a JS library that intercepts Emscripten's socket syscalls (`__syscall_socket`, `__syscall_bind`, `__syscall_recvfrom`, etc.) and routes them through Chrome's Direct Sockets API instead of the default WebSocket proxy.
+The workhorse is `emscripten/src/lib/libdirectsockets.js` — a JS library that intercepts Emscripten's socket syscalls (`__syscall_socket`, `__syscall_bind`, `__syscall_recvfrom`, etc.) and routes them through Chrome's Direct Sockets API instead of the default WebSocket proxy.
 
 Uses JSPI (JavaScript Promise Integration) to bridge async Direct Sockets promises to synchronous POSIX socket calls, without Asyncify overhead.
 
