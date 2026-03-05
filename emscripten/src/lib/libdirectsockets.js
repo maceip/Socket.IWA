@@ -10,6 +10,9 @@
  */
 
 #if DIRECT_SOCKETS
+#if !ASYNCIFY
+#error "DIRECT_SOCKETS requires ASYNCIFY or JSPI to be enabled (-sASYNCIFY or -sJSPI)"
+#endif
 
 var DirectSocketsLibrary = {
 
@@ -81,7 +84,9 @@ var DirectSocketsLibrary = {
         }
         // Fire-and-forget: queue the write, return byte count immediately.
         // The browser/OS handles TCP buffering and backpressure.
-        sock.writer.write(data).catch(function(e) {
+        // UDP writers expect {data} object; TCP writers accept raw Uint8Array.
+        var payload = (sock.type === {{{ cDefs.SOCK_DGRAM }}}) ? { data: data } : data;
+        sock.writer.write(payload).catch(function(e) {
           // write error - socket will be cleaned up by close
           sock.error = {{{ cDefs.EIO }}};
         });
@@ -121,8 +126,7 @@ var DirectSocketsLibrary = {
 
     createSocketState(family, type, protocol) {
 #if ASSERTIONS
-      if (typeof globalThis.TCPSocket === 'undefined' &&
-          typeof globalThis.UDPSocket === 'undefined') {
+      if (!globalThis.TCPSocket && !globalThis.UDPSocket) {
         abort('Direct Sockets API is not available. DIRECT_SOCKETS requires a Chrome Isolated Web App (IWA) context. See https://wicg.github.io/direct-sockets/');
       }
 #endif
@@ -1543,8 +1547,9 @@ var DirectSocketsLibrary = {
   __syscall_socketpair__deps: ['$DIRECT_SOCKETS_PIPES'],
   __syscall_socketpair: (domain, type, protocol, sv) => {
     // Two cross-connected pipes: fd0's write goes to fd1's read and vice versa
-    var fd0 = DIRECT_SOCKETS_PIPES.allocatePipeFd('sockpair[0.' + Object.keys(DIRECT_SOCKETS_PIPES.pipes).length + ']');
-    var fd1 = DIRECT_SOCKETS_PIPES.allocatePipeFd('sockpair[1.' + Object.keys(DIRECT_SOCKETS_PIPES.pipes).length + ']');
+    var id = DIRECT_SOCKETS.nextId++;
+    var fd0 = DIRECT_SOCKETS_PIPES.allocatePipeFd('sockpair[0.' + id + ']');
+    var fd1 = DIRECT_SOCKETS_PIPES.allocatePipeFd('sockpair[1.' + id + ']');
 
     // Create pipe objects directly (no intermediate fds needed)
     var spPipe0to1 = {
