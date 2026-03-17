@@ -236,8 +236,12 @@ static int stream_reset_cb(ngtcp2_conn *conn, int64_t stream_id,
     server_conn *sc = (server_conn *)user_data;
     (void)conn; (void)final_size; (void)app_error_code;
     (void)stream_user_data;
-    if (sc->h3conn)
-        nghttp3_conn_shutdown_stream_read(sc->h3conn, stream_id);
+    if (sc->h3conn) {
+        int rv = nghttp3_conn_shutdown_stream_read(sc->h3conn, stream_id);
+        if (rv != 0)
+            fprintf(stderr, "[WT] shutdown_stream_read error: %s\n",
+                    nghttp3_strerror(rv));
+    }
     return 0;
 }
 
@@ -245,10 +249,9 @@ static int stream_stop_sending_cb(ngtcp2_conn *conn, int64_t stream_id,
                                   uint64_t app_error_code, void *user_data,
                                   void *stream_user_data) {
     server_conn *sc = (server_conn *)user_data;
-    (void)conn; (void)stream_user_data;
+    (void)conn; (void)app_error_code; (void)stream_user_data;
     if (sc->h3conn)
-        nghttp3_conn_shutdown_stream_write(sc->h3conn, stream_id);
-    ngtcp2_conn_shutdown_stream_read(sc->conn, 0, stream_id, app_error_code);
+        nghttp3_conn_shutdown_stream_read(sc->h3conn, stream_id);
     return 0;
 }
 
@@ -258,8 +261,10 @@ static int acked_stream_data_offset_cb(ngtcp2_conn *conn, int64_t stream_id,
                                        void *stream_user_data) {
     server_conn *sc = (server_conn *)user_data;
     (void)conn; (void)offset; (void)stream_user_data;
-    if (sc->h3conn)
-        nghttp3_conn_add_ack_offset(sc->h3conn, stream_id, datalen);
+    if (sc->h3conn) {
+        int rv = nghttp3_conn_add_ack_offset(sc->h3conn, stream_id, datalen);
+        if (rv != 0) return NGTCP2_ERR_CALLBACK_FAILURE;
+    }
     return 0;
 }
 
@@ -274,26 +279,18 @@ static int recv_datagram_cb(ngtcp2_conn *conn, uint32_t flags,
 
     /* Echo the datagram back verbatim */
     ngtcp2_vec datav = {.base = (uint8_t *)data, .len = datalen};
+    uint8_t txbuf[MAX_UDP_PAYLOAD];
+    ngtcp2_path_storage ps;
+    ngtcp2_pkt_info pi;
     int accepted = 0;
-    int rv = ngtcp2_conn_writev_datagram(
-        sc->conn, NULL, NULL, NULL, NULL,
-        NGTCP2_WRITE_DATAGRAM_FLAG_MORE, 0, &datav, 1, timestamp_ns());
-    if (rv > 0) accepted = 1;
+    ngtcp2_path_storage_zero(&ps);
 
-    if (!accepted) {
-        /* Queue failed — try in next write cycle via sendto */
-        uint8_t txbuf[MAX_UDP_PAYLOAD];
-        ngtcp2_path_storage ps;
-        ngtcp2_pkt_info pi;
-        ngtcp2_path_storage_zero(&ps);
-
-        ngtcp2_ssize nwrite = ngtcp2_conn_writev_datagram(
-            sc->conn, &ps.path, &pi, txbuf, sizeof(txbuf),
-            &accepted, 0, 0, &datav, 1, timestamp_ns());
-        if (nwrite > 0) {
-            sendto(sc->fd, txbuf, (size_t)nwrite, 0,
-                   (struct sockaddr *)&sc->remote_addr, sc->remote_addrlen);
-        }
+    ngtcp2_ssize nwrite = ngtcp2_conn_writev_datagram(
+        sc->conn, &ps.path, &pi, txbuf, sizeof(txbuf),
+        &accepted, 0, 0, &datav, 1, timestamp_ns());
+    if (nwrite > 0) {
+        sendto(sc->fd, txbuf, (size_t)nwrite, 0,
+               (struct sockaddr *)&sc->remote_addr, sc->remote_addrlen);
     }
     return 0;
 }
@@ -303,7 +300,7 @@ static void rand_cb(uint8_t *dest, size_t destlen,
     (void)rand_ctx;
     WC_RNG rng;
     wc_InitRng(&rng);
-    wc_RNG_GenerateBlock(&rng, dest, destlen);
+    wc_RNG_GenerateBlock(&rng, dest, (word32)destlen);
     wc_FreeRng(&rng);
 }
 
@@ -313,11 +310,12 @@ static int get_new_connection_id_cb(ngtcp2_conn *conn, ngtcp2_cid *cid,
     (void)conn; (void)user_data;
     WC_RNG rng;
     wc_InitRng(&rng);
-    wc_RNG_GenerateBlock(&rng, cid->data, cidlen);
+    wc_RNG_GenerateBlock(&rng, cid->data, (word32)cidlen);
     cid->datalen = cidlen;
     wc_FreeRng(&rng);
-    ngtcp2_crypto_generate_stateless_reset_token(
-        token, static_secret, sizeof(static_secret), cid);
+    if (ngtcp2_crypto_generate_stateless_reset_token(
+            token, static_secret, sizeof(static_secret), cid) != 0)
+        return NGTCP2_ERR_CALLBACK_FAILURE;
     return 0;
 }
 
@@ -1023,6 +1021,15 @@ int main(void) {
                                (struct sockaddr *)&remote_addr, remote_addrlen,
                                buf, (size_t)nread);
         if (rv < 0 && g_sconn) {
+            destroy_server_conn(g_sconn);
+            g_sconn = NULL;
+        }
+
+        /* Clean up connections in closing/draining state */
+        if (g_sconn &&
+            (ngtcp2_conn_in_closing_period(g_sconn->conn) ||
+             ngtcp2_conn_in_draining_period(g_sconn->conn))) {
+            fprintf(stderr, "[WT] Connection entering closing/draining — cleanup\n");
             destroy_server_conn(g_sconn);
             g_sconn = NULL;
         }
