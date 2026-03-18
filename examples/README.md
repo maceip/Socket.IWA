@@ -16,11 +16,18 @@ Shows a local IWA-friendly server/client flow where:
 
 Path: `examples/webtransport-iwa/`
 
-Shows an HTTP/3 Extended CONNECT + WebTransport setup that can be consumed by Chrome using:
+A complete WebTransport echo server and client using the ngtcp2 + nghttp3 + wolfSSL stack:
 
-```js
-const wt = new WebTransport('https://127.0.0.1:4433/wt');
-await wt.ready;
+- **`server.c`** — Full QUIC/HTTP/3/WebTransport server that accepts Extended CONNECT sessions, echoes bidirectional stream data and datagrams back to the client
+- **`client.html`** — Browser client using `new WebTransport()` with support for `serverCertificateHashes`, datagram send/receive, and bidirectional streams
+- **`Makefile`** — Native and Emscripten/WASM build targets
+
+```bash
+cd examples/webtransport-iwa
+make cert_data.h   # generate self-signed cert
+make native        # build server
+./wt_echo_server   # start on UDP :4433
+# open client.html in Chrome, paste the cert hash, click Connect
 ```
 
 ## 3) Multicast media on LAN

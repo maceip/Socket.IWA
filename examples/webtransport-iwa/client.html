@@ -1,22 +1,211 @@
-<!doctype html>
-<meta charset="utf-8" />
-<title>WebTransport IWA Example</title>
-<script type="module">
-  const log = (...args) => {
-    const el = document.getElementById('log');
-    el.textContent += `${args.join(' ')}\n`;
-  };
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>WebTransport Echo Client (IWA)</title>
+  <style>
+    body { font-family: monospace; background: #1a1a2e; color: #e0e0e0; padding: 20px; }
+    h1 { color: #0ff; font-size: 1.4em; }
+    #log { background: #16213e; border: 1px solid #0f3460; padding: 12px;
+           max-height: 50vh; overflow-y: auto; white-space: pre-wrap; font-size: 13px; }
+    .ok { color: #0f0; } .err { color: #f33; } .info { color: #7ec8e3; }
+    .sent { color: #ff0; } .recv { color: #0ff; }
+    button { background: #0f3460; color: #0ff; border: 1px solid #0ff;
+             padding: 6px 14px; cursor: pointer; font-family: monospace; margin: 4px; }
+    button:hover { background: #1a4a7a; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    input { background: #0a0a1a; color: #e0e0e0; border: 1px solid #333;
+            padding: 6px; font-family: monospace; width: 300px; }
+    .section { margin: 12px 0; padding: 8px; border: 1px solid #333; }
+    label { display: inline-block; width: 120px; }
+  </style>
+</head>
+<body>
+  <h1>WebTransport Echo Client</h1>
 
-  const transport = new WebTransport('https://127.0.0.1:4433/wt');
-  await transport.ready;
-  log('connected');
+  <div class="section">
+    <label>Server URL:</label>
+    <input id="url" value="https://127.0.0.1:4433/wt" />
+    <br><br>
+    <label>Cert hash (b64):</label>
+    <input id="certHash" placeholder="paste base64 SHA-256 from gen_cert.sh" />
+    <br><br>
+    <button id="btnConnect" onclick="doConnect()">Connect</button>
+    <button id="btnClose" onclick="doClose()" disabled>Close</button>
+  </div>
 
-  const writer = transport.datagrams.writable.getWriter();
-  await writer.write(new TextEncoder().encode('hello over webtransport'));
-  writer.releaseLock();
+  <div class="section">
+    <label>Message:</label>
+    <input id="msg" value="hello webtransport" />
+    <button id="btnDatagram" onclick="sendDatagram()" disabled>Send Datagram</button>
+    <button id="btnStream" onclick="sendStream()" disabled>Send via Stream</button>
+  </div>
 
-  const reader = transport.datagrams.readable.getReader();
-  const { value } = await reader.read();
-  if (value) log('received', new TextDecoder().decode(value));
-</script>
-<pre id="log"></pre>
+  <button onclick="document.getElementById('log').textContent=''">Clear Log</button>
+  <div id="log"></div>
+
+  <script type="module">
+    const logEl = document.getElementById('log');
+    function log(msg, cls = 'info') {
+      const ts = new Date().toISOString().split('T')[1].replace('Z', '');
+      const d = document.createElement('div');
+      d.className = cls;
+      d.textContent = `[${ts}] ${msg}`;
+      logEl.appendChild(d);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    let transport = null;
+
+    window.doConnect = async function () {
+      const url = document.getElementById('url').value;
+      const hashB64 = document.getElementById('certHash').value.trim();
+
+      const opts = {};
+      if (hashB64) {
+        /* Convert base64 cert hash to ArrayBuffer for serverCertificateHashes */
+        const raw = Uint8Array.from(atob(hashB64), c => c.charCodeAt(0));
+        opts.serverCertificateHashes = [{
+          algorithm: 'sha-256',
+          value: raw.buffer,
+        }];
+        log(`Using cert hash: ${hashB64}`, 'info');
+      }
+
+      /* For IWA contexts, allowPooling may be needed */
+      opts.allowPooling = false;
+      opts.requireUnreliable = true;
+
+      log(`Connecting to ${url}...`, 'info');
+      try {
+        transport = new WebTransport(url, opts);
+
+        transport.closed.then(() => {
+          log('Connection closed', 'info');
+          setButtons(false);
+        }).catch(e => {
+          log(`Connection closed with error: ${e.message}`, 'err');
+          setButtons(false);
+        });
+
+        await transport.ready;
+        log('Connected!', 'ok');
+        setButtons(true);
+
+        /* Start reading datagrams in background */
+        readDatagrams();
+        /* Start accepting incoming bidirectional streams */
+        readIncomingStreams();
+      } catch (e) {
+        log(`Connect failed: ${e.message}`, 'err');
+        log('Hint: For self-signed certs, paste the base64 SHA-256 hash from gen_cert.sh', 'info');
+        setButtons(false);
+      }
+    };
+
+    window.doClose = function () {
+      if (transport) {
+        transport.close();
+        transport = null;
+      }
+    };
+
+    window.sendDatagram = async function () {
+      if (!transport) return;
+      const text = document.getElementById('msg').value;
+      const data = new TextEncoder().encode(text);
+      const writer = transport.datagrams.writable.getWriter();
+      await writer.write(data);
+      writer.releaseLock();
+      log(`DATAGRAM sent: "${text}" (${data.byteLength} bytes)`, 'sent');
+    };
+
+    window.sendStream = async function () {
+      if (!transport) return;
+      const text = document.getElementById('msg').value;
+      const data = new TextEncoder().encode(text);
+
+      const stream = await transport.createBidirectionalStream();
+      log(`Opened bidi stream`, 'info');
+
+      /* Write and close the send side */
+      const writer = stream.writable.getWriter();
+      await writer.write(data);
+      await writer.close();
+      log(`STREAM sent: "${text}" (${data.byteLength} bytes)`, 'sent');
+
+      /* Read the echo response */
+      const reader = stream.readable.getReader();
+      const chunks = [];
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+      const reply = new TextDecoder().decode(concatBuffers(chunks));
+      log(`STREAM recv: "${reply}"`, 'recv');
+    };
+
+    async function readDatagrams() {
+      if (!transport) return;
+      const reader = transport.datagrams.readable.getReader();
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          const text = new TextDecoder().decode(value);
+          log(`DATAGRAM recv: "${text}" (${value.byteLength} bytes)`, 'recv');
+        }
+      } catch (e) {
+        if (transport) log(`Datagram reader error: ${e.message}`, 'err');
+      }
+    }
+
+    async function readIncomingStreams() {
+      if (!transport) return;
+      const reader = transport.incomingBidirectionalStreams.getReader();
+      try {
+        for (;;) {
+          const { value: stream, done } = await reader.read();
+          if (done) break;
+          log(`Incoming bidi stream`, 'info');
+          handleIncomingStream(stream);
+        }
+      } catch (e) {
+        if (transport) log(`Incoming stream error: ${e.message}`, 'err');
+      }
+    }
+
+    async function handleIncomingStream(stream) {
+      const reader = stream.readable.getReader();
+      const chunks = [];
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+      const text = new TextDecoder().decode(concatBuffers(chunks));
+      log(`Incoming stream data: "${text}"`, 'recv');
+    }
+
+    function concatBuffers(bufs) {
+      const len = bufs.reduce((a, b) => a + b.byteLength, 0);
+      const out = new Uint8Array(len);
+      let off = 0;
+      for (const b of bufs) { out.set(b, off); off += b.byteLength; }
+      return out;
+    }
+
+    function setButtons(connected) {
+      document.getElementById('btnConnect').disabled = connected;
+      document.getElementById('btnClose').disabled = !connected;
+      document.getElementById('btnDatagram').disabled = !connected;
+      document.getElementById('btnStream').disabled = !connected;
+    }
+
+    log('Ready — enter server URL and cert hash, then click Connect', 'ok');
+    log('Generate cert: bash ../../gen_cert.sh .', 'info');
+    log('The cert hash (base64) is printed by gen_cert.sh', 'info');
+  </script>
+</body>
+</html>
